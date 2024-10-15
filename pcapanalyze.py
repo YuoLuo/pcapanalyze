@@ -2,6 +2,8 @@ import pandas as pd
 from scapy.all import rdpcap, IP, TCP, UDP, Raw, conf
 import sys
 import warnings
+import argparse
+from collections import Counter
 
 # 忽略 Scapy 的警告
 conf.verb = 0
@@ -18,10 +20,12 @@ def hex_to_ascii(hex_str):
         return hex_str
 
 
-def pcap_to_csv(pcap_file, csv_file):
+def pcap_to_csv(pcap_file, csv_file, track_ip=False):
     packets = rdpcap(pcap_file)
 
     data = []
+    ip_counter = Counter()
+    ip_requests = {}
 
     for packet in packets:
         if IP in packet:
@@ -60,6 +64,12 @@ def pcap_to_csv(pcap_file, csv_file):
 
             data.append(packet_info)
 
+            # 统计IP频率
+            ip_counter[ip_src] += 1
+            if ip_src not in ip_requests:
+                ip_requests[ip_src] = []
+            ip_requests[ip_src].append(packet_info['内容'])
+
             proto_name = 'TCP' if proto == 6 else 'UDP' if proto == 17 else '其他'
             print(f"{ip_src} 向 {ip_dst} 发送了 {proto_name} 数据包，内容: {packet_info['内容']}")
 
@@ -87,13 +97,20 @@ def pcap_to_csv(pcap_file, csv_file):
         print("前五个目标端口:")
         print(df['目标端口'].value_counts().head())
 
+    if track_ip:
+        most_common_ip, count = ip_counter.most_common(1)[0]
+        print(f"\n频率最高的IP地址是: {most_common_ip}，出现了 {count} 次")
+        print(f"{most_common_ip} 请求的内容:")
+        for content in ip_requests[most_common_ip]:
+            print(content)
+
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("用法: python3 pcapanalyze.py <输入_pcap_文件> <输出_csv_文件>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="PCAP分析工具")
+    parser.add_argument("pcap_file", help="输入的PCAP文件")
+    parser.add_argument("csv_file", help="输出的CSV文件")
+    parser.add_argument("-t", "--track_ip", action="store_true", help="提取频率最高的IP并显示其请求的内容")
 
-    pcap_file = sys.argv[1]
-    csv_file = sys.argv[2]
+    args = parser.parse_args()
 
-    pcap_to_csv(pcap_file, csv_file)
+    pcap_to_csv(args.pcap_file, args.csv_file, args.track_ip)
